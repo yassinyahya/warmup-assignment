@@ -40,6 +40,23 @@ function isSpecialPeriod(date) {
     return false;
 }
 
+function readFileLines(filePath) {
+    try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        return content.split('\n').filter(line => line.trim() !== '');
+    } catch (error) {
+        return [];
+    }
+}
+
+function parseCSVLine(line) {
+    return line.split(',').map(item => item.trim());
+}
+
+function normalizeMonth(month) {
+    return month.toString().padStart(2, '0');
+}
+
 // ============================================================
 // Function 1: getShiftDuration(startTime, endTime)
 // startTime: (typeof string) formatted as hh:mm:ss am or hh:mm:ss pm
@@ -133,7 +150,39 @@ function metQuota(date, activeTime) {
 // Returns: object with 10 properties or empty object {}
 // ============================================================
 function addShiftRecord(textFile, shiftObj) {
-    // TODO: Implement this function
+    const lines = readFileLines(textFile);
+    
+    for (let i = 1; i < lines.length; i++) {
+        const parts = parseCSVLine(lines[i]);
+        if (parts.length >= 3 && parts[0] === shiftObj.driverID && parts[2] === shiftObj.date) {
+            return {};
+        }
+    }
+    
+    const shiftDuration = getShiftDuration(shiftObj.startTime, shiftObj.endTime);
+    const idleTime = getIdleTime(shiftObj.startTime, shiftObj.endTime);
+    const activeTime = getActiveTime(shiftDuration, idleTime);
+    const metQuotaResult = metQuota(shiftObj.date, activeTime);
+    
+    const newRecord = {
+        driverID: shiftObj.driverID,
+        driverName: shiftObj.driverName,
+        date: shiftObj.date,
+        startTime: shiftObj.startTime,
+        endTime: shiftObj.endTime,
+        shiftDuration: shiftDuration,
+        idleTime: idleTime,
+        activeTime: activeTime,
+        metQuota: metQuotaResult,
+        hasBonus: false
+    };
+    
+    const newLine = `${newRecord.driverID},${newRecord.driverName},${newRecord.date},${newRecord.startTime},${newRecord.endTime},${newRecord.shiftDuration},${newRecord.idleTime},${newRecord.activeTime},${newRecord.metQuota},${newRecord.hasBonus}`;
+    
+    lines.push(newLine);
+    fs.writeFileSync(textFile, lines.join('\n'));
+    
+    return newRecord;
 }
 
 // ============================================================
@@ -145,7 +194,22 @@ function addShiftRecord(textFile, shiftObj) {
 // Returns: nothing (void)
 // ============================================================
 function setBonus(textFile, driverID, date, newValue) {
-    // TODO: Implement this function
+    const lines = readFileLines(textFile);
+    let found = false;
+    
+    for (let i = 1; i < lines.length; i++) {
+        const parts = parseCSVLine(lines[i]);
+        if (parts.length >= 10 && parts[0] === driverID && parts[2] === date) {
+            parts[9] = newValue.toString();
+            lines[i] = parts.join(',');
+            found = true;
+            break;
+        }
+    }
+    
+    if (found) {
+        fs.writeFileSync(textFile, lines.join('\n'));
+    }
 }
 
 // ============================================================
@@ -156,7 +220,25 @@ function setBonus(textFile, driverID, date, newValue) {
 // Returns: number (-1 if driverID not found)
 // ============================================================
 function countBonusPerMonth(textFile, driverID, month) {
-    // TODO: Implement this function
+    const lines = readFileLines(textFile);
+    const normalizedMonth = normalizeMonth(month);
+    let driverExists = false;
+    let bonusCount = 0;
+    
+    for (let i = 1; i < lines.length; i++) {
+        const parts = parseCSVLine(lines[i]);
+        if (parts.length >= 3) {
+            if (parts[0] === driverID) {
+                driverExists = true;
+                const recordMonth = parts[2].substring(5, 7);
+                if (recordMonth === normalizedMonth && parts[9] === 'true') {
+                    bonusCount++;
+                }
+            }
+        }
+    }
+    
+    return driverExists ? bonusCount : -1;
 }
 
 // ============================================================
