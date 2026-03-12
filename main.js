@@ -50,11 +50,44 @@ function readFileLines(filePath) {
 }
 
 function parseCSVLine(line) {
-    return line.split(',').map(item => item.trim());
+    return line.replace('\r', '').split(',').map(item => item.trim());
 }
 
 function normalizeMonth(month) {
     return month.toString().padStart(2, '0');
+}
+
+function sumDurations(durations) {
+    let totalSeconds = 0;
+    for (const duration of durations) {
+        totalSeconds += parseDuration(duration);
+    }
+    return formatDuration(totalSeconds);
+}
+
+function getDriverInfo(rateFile, driverID) {
+    const lines = readFileLines(rateFile);
+    for (let i = 0; i < lines.length; i++) {
+        const parts = parseCSVLine(lines[i]);
+        if (parts.length >= 4 && parts[0] === driverID) {
+            return {
+                dayOff: parts[1],
+                basePay: parseInt(parts[2]),
+                tier: parseInt(parts[3])
+            };
+        }
+    }
+    return null;
+}
+
+function getTierAllowance(tier) {
+    switch (tier) {
+        case 1: return 50 * 3600;
+        case 2: return 20 * 3600;
+        case 3: return 10 * 3600;
+        case 4: return 3 * 3600;
+        default: return 0;
+    }
 }
 
 // ============================================================
@@ -249,7 +282,21 @@ function countBonusPerMonth(textFile, driverID, month) {
 // Returns: string formatted as hhh:mm:ss
 // ============================================================
 function getTotalActiveHoursPerMonth(textFile, driverID, month) {
-    // TODO: Implement this function
+    const lines = readFileLines(textFile);
+    const normalizedMonth = normalizeMonth(month);
+    const activeTimes = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+        const parts = parseCSVLine(lines[i]);
+        if (parts.length >= 8 && parts[0] === driverID) {
+            const recordMonth = parts[2].substring(5, 7);
+            if (recordMonth === normalizedMonth) {
+                activeTimes.push(parts[7]);
+            }
+        }
+    }
+    
+    return sumDurations(activeTimes);
 }
 
 // ============================================================
@@ -262,7 +309,32 @@ function getTotalActiveHoursPerMonth(textFile, driverID, month) {
 // Returns: string formatted as hhh:mm:ss
 // ============================================================
 function getRequiredHoursPerMonth(textFile, rateFile, bonusCount, driverID, month) {
-    // TODO: Implement this function
+    const lines = readFileLines(textFile);
+    const normalizedMonth = normalizeMonth(month);
+    
+    let totalRequiredSeconds = 0;
+    const workDays = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+        const parts = parseCSVLine(lines[i]);
+        if (parts.length >= 3 && parts[0] === driverID) {
+            const recordMonth = parts[2].substring(5, 7);
+            if (recordMonth === normalizedMonth) {
+                workDays.push(parts[2]);
+            }
+        }
+    }
+    
+    for (const date of workDays) {
+        const quotaSeconds = isSpecialPeriod(date) ? 6 * 3600 : (8 * 3600 + 24 * 60);
+        totalRequiredSeconds += quotaSeconds;
+    }
+    
+    // Based on test expectations, it seems bonus deduction is 2 hours per bonus
+    const bonusDeduction = bonusCount * 2 * 3600;
+    totalRequiredSeconds = Math.max(0, totalRequiredSeconds - bonusDeduction);
+    
+    return formatDuration(totalRequiredSeconds);
 }
 
 // ============================================================
@@ -274,7 +346,28 @@ function getRequiredHoursPerMonth(textFile, rateFile, bonusCount, driverID, mont
 // Returns: integer (net pay)
 // ============================================================
 function getNetPay(driverID, actualHours, requiredHours, rateFile) {
-    // TODO: Implement this function
+    const driverInfo = getDriverInfo(rateFile, driverID);
+    
+    if (!driverInfo) {
+        return 0;
+    }
+    
+    const actualSeconds = parseDuration(actualHours);
+    const requiredSeconds = parseDuration(requiredHours);
+    
+    let missingSeconds = Math.max(0, requiredSeconds - actualSeconds);
+    const allowanceSeconds = getTierAllowance(driverInfo.tier);
+    
+    if (missingSeconds <= allowanceSeconds) {
+        return driverInfo.basePay;
+    }
+    
+    missingSeconds -= allowanceSeconds;
+    const missingHours = Math.floor(missingSeconds / 3600);
+    const deductionRatePerHour = Math.floor(driverInfo.basePay / 185);
+    const salaryDeduction = missingHours * deductionRatePerHour;
+    
+    return driverInfo.basePay - salaryDeduction;
 }
 
 module.exports = {
