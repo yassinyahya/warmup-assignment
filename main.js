@@ -1,5 +1,45 @@
 const fs = require("fs");
 
+// Helper functions
+function parseTime12Hour(timeStr) {
+    const parts = timeStr.trim().toLowerCase().split(' ');
+    const time = parts[0];
+    const period = parts[1];
+    
+    const [hours, minutes, seconds] = time.split(':').map(Number);
+    
+    let totalHours = hours;
+    if (period === 'am') {
+        if (hours === 12) totalHours = 0;
+    } else {
+        if (hours !== 12) totalHours += 12;
+    }
+    
+    return totalHours * 3600 + minutes * 60 + seconds;
+}
+
+function parseDuration(durationStr) {
+    const [hours, minutes, seconds] = durationStr.split(':').map(Number);
+    return hours * 3600 + minutes * 60 + seconds;
+}
+
+function formatDuration(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const remainingSeconds = seconds % 3600;
+    const minutes = Math.floor(remainingSeconds / 60);
+    const secs = remainingSeconds % 60;
+    
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+function isSpecialPeriod(date) {
+    const [year, month, day] = date.split('-').map(Number);
+    if (year === 2025 && month === 4) {
+        return day >= 10 && day <= 30;
+    }
+    return false;
+}
+
 // ============================================================
 // Function 1: getShiftDuration(startTime, endTime)
 // startTime: (typeof string) formatted as hh:mm:ss am or hh:mm:ss pm
@@ -7,7 +47,17 @@ const fs = require("fs");
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getShiftDuration(startTime, endTime) {
-    // TODO: Implement this function
+    const startSeconds = parseTime12Hour(startTime);
+    const endSeconds = parseTime12Hour(endTime);
+    
+    let duration;
+    if (endSeconds >= startSeconds) {
+        duration = endSeconds - startSeconds;
+    } else {
+        duration = (24 * 3600 - startSeconds) + endSeconds;
+    }
+    
+    return formatDuration(duration);
 }
 
 // ============================================================
@@ -17,7 +67,34 @@ function getShiftDuration(startTime, endTime) {
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getIdleTime(startTime, endTime) {
-    // TODO: Implement this function
+    const startSeconds = parseTime12Hour(startTime);
+    const endSeconds = parseTime12Hour(endTime);
+    
+    const deliveryStart = 8 * 3600;
+    const deliveryEnd = 22 * 3600;
+    
+    let idleSeconds = 0;
+    
+    if (endSeconds >= startSeconds) {
+        if (startSeconds < deliveryStart) {
+            idleSeconds += Math.min(deliveryStart - startSeconds, endSeconds - startSeconds);
+        }
+        if (endSeconds > deliveryEnd) {
+            idleSeconds += Math.min(endSeconds - deliveryEnd, endSeconds - startSeconds);
+        }
+    } else {
+        if (startSeconds < deliveryStart) {
+            idleSeconds += Math.min(deliveryStart - startSeconds, 24 * 3600 - startSeconds);
+        }
+        if (endSeconds > deliveryEnd) {
+            idleSeconds += Math.min(endSeconds - deliveryEnd, endSeconds);
+        }
+        if (startSeconds >= deliveryEnd) {
+            idleSeconds += (24 * 3600 - startSeconds) + endSeconds;
+        }
+    }
+    
+    return formatDuration(idleSeconds);
 }
 
 // ============================================================
@@ -27,7 +104,12 @@ function getIdleTime(startTime, endTime) {
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getActiveTime(shiftDuration, idleTime) {
-    // TODO: Implement this function
+    const shiftSeconds = parseDuration(shiftDuration);
+    const idleSeconds = parseDuration(idleTime);
+    
+    const activeSeconds = Math.max(0, shiftSeconds - idleSeconds);
+    
+    return formatDuration(activeSeconds);
 }
 
 // ============================================================
@@ -37,7 +119,11 @@ function getActiveTime(shiftDuration, idleTime) {
 // Returns: boolean
 // ============================================================
 function metQuota(date, activeTime) {
-    // TODO: Implement this function
+    const activeSeconds = parseDuration(activeTime);
+    
+    const quotaSeconds = isSpecialPeriod(date) ? 6 * 3600 : (8 * 3600 + 24 * 60);
+    
+    return activeSeconds >= quotaSeconds;
 }
 
 // ============================================================
